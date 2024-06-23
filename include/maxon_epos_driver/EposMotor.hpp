@@ -1,0 +1,72 @@
+/**
+ * @file   EposMotor
+ * @brief  
+ * @author arwtyxouymz
+ * @date   2019-06-03 16:12:59
+ */
+
+#ifndef _EposMotor_HPP
+#define _EposMotor_HPP
+
+#include <vector>
+#include <string>
+#include "Device.hpp"
+#include "ControlModeBase.hpp"
+
+class EposMotor {
+    public:
+        EposMotor();
+        EposMotor(std::string motor_name, std::string EposModel, std::string protocol_stack, std::string interface, std::string port,
+                int baudrate, int timeout,
+                int encoder_type, int encoder_resolution, int gear_ratio, int encoder_inverted_polarity, std::string control_mode);
+        virtual ~EposMotor();
+        bool set_velocity(int velocity);
+
+    void init();
+
+    std::vector<double> read();
+    void write(const double position, const double velocity, const double current);
+
+    private:
+        void initEposDeviceHandle();
+        void initDeviceError();
+        void initProtocolStackChanges();
+        void initControlMode(std::string control_mode);
+        void initEncoderParams();
+        void initProfilePosition();
+        void enableMotor();
+
+        double ReadPosition();
+        double ReadVelocity();
+        double ReadCurrent();
+
+        typedef std::shared_ptr<ControlModeBase> ControlModePtr;
+        typedef std::map<std::string, ControlModePtr> ControlModeMap;
+
+        NodeHandle m_epos_handle;
+        ControlModePtr m_control_mode;
+        ControlModeMap m_control_mode_map;
+
+        double m_position;
+        double m_velocity;
+        double m_effort;
+        double m_current;
+
+        int m_max_qc;
+
+        std::string _motor_name;
+        std::string _EposModel;         // EPOS4
+        std::string _protocol_stack;    // MAXON SERIAL V2
+        std::string _interface;         // USB
+        std::string _port;              // USB0
+        int _baudrate;          // 0
+        int _timeout;           // 0
+        std::string _control_mode;      // profile_position
+        int _encoder_type;      // ,,,
+        int _encoder_resolution; // ,,,
+        int _gear_ratio; // ,,,
+        bool _encoder_inverted_polarity;     // ,,,
+        int _position_mode_velocity, _position_mode_acceleration, _position_mode_deceleration;  // ,,,
+};
+
+#endif // _EposMotor_HPP
