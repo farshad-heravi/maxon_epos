@@ -10,9 +10,9 @@
 EposProfileVelocityMode::~EposProfileVelocityMode()
 {}
 
-void EposProfileVelocityMode::init()
+void EposProfileVelocityMode::init(NodeHandle &node_handle)
 {
-    ControlModeBase::init();
+    ControlModeBase::init(node_handle);
 }
 
 void EposProfileVelocityMode::activate()
@@ -21,5 +21,5 @@ void EposProfileVelocityMode::activate()
 void EposProfileVelocityMode::read()
 {}
 
-void EposProfileVelocityMode::write(const double position, const double velocity, const double current)
+void EposProfileVelocityMode::write(const int position, const int velocity, const int current)
 {}

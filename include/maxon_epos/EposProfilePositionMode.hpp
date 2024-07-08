@@ -10,16 +10,17 @@
 
 #include "ControlModeBase.hpp"
 #include "Device.hpp"
+#include <iostream>
 
 
 class EposProfilePositionMode : public ControlModeBase {
 public:
     virtual ~EposProfilePositionMode();
 
-    virtual void init();
+    virtual void init(NodeHandle &node_handle);
     virtual void activate();
-    virtual void read();
-    virtual void write(const double position, const double velocity, const double current);
+    virtual std::vector<int> read();
+    virtual void write(const int position, const int velocity, const int current);
 
 private:
     int m_max_qc;

@@ -19,9 +19,11 @@ class EposManager {
         virtual ~EposManager();
 
         bool init();
-        std::vector<double> read();
-        void write(const std::vector<double> command);
+        std::vector<int> read();
+        void write(const std::vector<int> command);
         bool set_velocity(int velocity);                // set constant velocity for profile_position
+        void start();
+        void stop();
 
     private:
         

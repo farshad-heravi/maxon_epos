@@ -11,9 +11,9 @@
 EposCurrentMode::~EposCurrentMode()
 {}
 
-void EposCurrentMode::init()
+void EposCurrentMode::init(NodeHandle &node_handle)
 {
-    ControlModeBase::init();
+    ControlModeBase::init(node_handle);
 }
 
 void EposCurrentMode::activate()
@@ -22,5 +22,5 @@ void EposCurrentMode::activate()
 void EposCurrentMode::read()
 {}
 
-void EposCurrentMode::write(const double position, const double velocity, const double current)
+void EposCurrentMode::write(const int position, const int velocity, const int current)
 {}

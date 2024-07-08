@@ -9,7 +9,9 @@
 #define _EposMotor_HPP
 
 #include <vector>
+#include <thread>
 #include <string>
+#include <atomic>
 #include "Device.hpp"
 #include "ControlModeBase.hpp"
 
@@ -22,10 +24,13 @@ class EposMotor {
         virtual ~EposMotor();
         bool set_velocity(int velocity);
 
-    void init();
+        void init();
+        void Start();
+        void Stop();
 
-    std::vector<double> read();
-    void write(const double position, const double velocity, const double current);
+        std::vector<int> read();
+        void write(const int position, const int velocity, const int current);
+
 
     private:
         void initEposDeviceHandle();
@@ -35,6 +40,11 @@ class EposMotor {
         void initEncoderParams();
         void initProfilePosition();
         void enableMotor();
+        void ReadThread(EposMotor * pModule);
+        void ReadLoop();
+        void WriteThread(EposMotor * pModule);
+        void WriteLoop();
+
 
         double ReadPosition();
         double ReadVelocity();
@@ -47,12 +57,23 @@ class EposMotor {
         ControlModePtr m_control_mode;
         ControlModeMap m_control_mode_map;
 
-        double m_position;
-        double m_velocity;
-        double m_effort;
-        double m_current;
+        int m_position;
+        int m_velocity;
+        int m_effort;
+        int m_current;
 
-        int m_max_qc;
+        int _target_pos;                // target position in ticks
+        bool _m_readLoop;
+        int _update_interval;  // in ms
+
+        //! Flag indicating if the write loop should keep on spinning.
+        std::atomic_bool m_bIsRunning;
+        std::atomic_bool m_readLoop;
+
+        //! Pointer to the write thread. Will be nullptr if the module is stopped.
+        std::thread* m_pWriteThread;
+        std::thread* m_pReadThread;
+
 
         std::string _motor_name;
         std::string _EposModel;         // EPOS4

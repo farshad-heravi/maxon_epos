@@ -9,6 +9,8 @@
  */
 
 #include <iostream>
+#include <vector>
+#include <thread>
 #include "Definitions.h"
 #include "EposMotor.hpp"
 #include "Macros.hpp"
@@ -16,6 +18,8 @@
 #include "EposProfilePositionMode.hpp"
 #include "EposProfileVelocityMode.hpp"
 #include "EposCurrentMode.hpp"
+
+#include <unistd.h>
 
 // #include "maxon_epos_msgs/MotorState.h"
 
@@ -25,15 +29,17 @@
 EposMotor::EposMotor(std::string motor_name, std::string EposModel, std::string protocol_stack, std::string interface, std::string port,
                 int baudrate, int timeout,
                 int encoder_type, int encoder_resolution, int gear_ratio, int encoder_inverted_polarity, std::string control_mode) : _motor_name(motor_name),
-        m_position(0), m_velocity(0), m_effort(0), m_current(0),
         _EposModel(EposModel), _protocol_stack(protocol_stack), _interface(interface), _port(port),
         _encoder_type(encoder_type), _encoder_resolution(encoder_resolution), _gear_ratio(gear_ratio), _encoder_inverted_polarity(encoder_inverted_polarity),
         _baudrate(baudrate), _timeout (timeout),
-        _control_mode (control_mode)
+        _control_mode (control_mode), _target_pos(0)
 {
-    _position_mode_velocity = 10; // ,,,
-    _position_mode_acceleration = 100; // ,,,
-    _position_mode_deceleration = 100; // ,,,
+    // m_position = 0; //, m_velocity(0), m_effort(0), m_current(0)
+
+    _position_mode_velocity = 6250000; // ,,,
+    _position_mode_acceleration = 10000; // ,,,
+    _position_mode_deceleration = 10000; // ,,,
+    _update_interval = 30;
 }
 
 /**
@@ -44,6 +50,13 @@ EposMotor::~EposMotor()
 {
     try {
         VCS_NODE_COMMAND_NO_ARGS(SetDisableState, m_epos_handle);
+        _m_readLoop = false;
+        if (m_pReadThread != nullptr)
+        {
+            m_pReadThread->join();
+            delete m_pReadThread;
+            m_pReadThread = nullptr;
+        }
     } catch (const EposException &e) {
         std::cout << e.what() << std::endl;
     }
@@ -60,35 +73,146 @@ void EposMotor::init()
     initControlMode(_control_mode);
     initEncoderParams();
     initProfilePosition();
-    enableMotor();
+
+    _m_readLoop = true;
+    m_pReadThread = new std::thread([this] { this->ReadThread(this); });    // start readloop
+    sleep(1);
+    _target_pos = m_position;
+    enableMotor();      // enable the motor
+    std::vector<int> readings = m_control_mode->read();     // read current position and set it to _home_qc
 }
 
-std::vector<double> EposMotor::read()
+// //! \brief Entry point for the write thread.
+// //! \param pModule A pointer to the Module instance associated with the write thread.
+void EposMotor::ReadThread(EposMotor * pModule)
 {
-    try {
-        if (m_control_mode) {
-            m_control_mode->read();
+    pModule->ReadLoop();
+}
+
+void EposMotor::ReadLoop()
+{
+    std::cout << "Epos Read thread started." << std::endl;
+    while (_m_readLoop)
+    {
+        std::chrono::high_resolution_clock::time_point last=std::chrono::high_resolution_clock::now();
+        
+        int positionls = 0, velocityls = 0;
+        short currentls = 0;
+        try{
+            VCS_NODE_COMMAND(GetPositionIs, m_epos_handle, &positionls);
+            VCS_NODE_COMMAND(GetVelocityIsAveraged, m_epos_handle, &velocityls);
+            VCS_NODE_COMMAND(GetCurrentIsAveraged, m_epos_handle, &currentls);
+        } catch (const EposException &e) {
+            std::cout << "Epos GetPositionIs error!" << std::endl;
+            std::cout << e.what() << std::endl;
         }
-        m_position = ReadPosition();
-        m_velocity = ReadVelocity();
-        m_current = ReadCurrent();
-    } catch (const EposException &e) {
-        std::cout << "ERROR: " << e.what() << std::endl;
+        m_position = positionls;
+        m_velocity = velocityls;
+        m_effort = currentls;
+
+        std::chrono::high_resolution_clock::time_point current=std::chrono::high_resolution_clock::now();
+        int64_t ms=(std::chrono::duration_cast<std::chrono::milliseconds>( current - last )).count();
+        if(ms < _update_interval)
+            std::this_thread::sleep_for(std::chrono::milliseconds( _update_interval - ms ));
     }
-    
-    std::vector<double> output = {m_position, m_velocity, m_current};
+    std::cout << "EPOS Write thread terminating." << std::endl;
+}
+
+std::vector<int> EposMotor::read()
+{
+    std::vector<int> output = {m_position, m_velocity, m_current};
     return output;
+    // previous implementation :
+    // // try {
+    // //     if (m_control_mode) {
+    // //         m_control_mode->read();
+    // //     }
+    // //     m_position = ReadPosition();
+    // //     // std::cout << m_position << std::endl;
+    // //     m_velocity = ReadVelocity();
+    // //     m_current = ReadCurrent();
+    // // } catch (const EposException &e) {
+    // //     std::cout << "ERROR: " << e.what() << std::endl;
+    // // }
+    // std::vector<double> output = {m_position, m_velocity, m_current};
+    // return output;
 }
 
-void EposMotor::write(const double position, const double velocity, const double current)
+/*
+@param position: target position in ticks
+*/
+void EposMotor::write(const int position, const int velocity, const int current)
 {
-    try {
-        if (m_control_mode) {
-            m_control_mode->write(position, velocity, current);
-        }
-    } catch (const EposException &e) {
-        std::cout << e.what() << std::endl;
+    _target_pos = position;
+
+    // previous implementation (not thread)
+    // try {
+    //     if (m_control_mode) {
+    //         m_control_mode->write(position, velocity, current);
+    //     }
+    // } catch (const EposException &e) {
+    //     std::cout << e.what() << std::endl;
+    // }
+}
+
+void EposMotor::WriteThread(EposMotor * pModule)
+{
+    pModule->WriteLoop();
+}
+
+//! \brief Starts the thread that is spinning in the write loop that sends periodic SetJoint commands to the module over the CAN bus.
+void EposMotor::Start()
+{
+    m_bIsRunning = true;
+    m_pReadThread = new std::thread([this] { this->WriteThread(this); });
+}
+
+//! \brief Terminates and joins the thread that is spinning in the write loop that sends periodic SetJoint commands to the module over the CAN bus.
+void EposMotor::Stop()
+{
+    m_bIsRunning = false;
+    if (m_pWriteThread != nullptr)
+    {
+        m_pWriteThread->join();
+        delete m_pWriteThread;
+        m_pWriteThread = nullptr;
     }
+}
+
+//! \brief The write loop that will asynchronuously send setposition messages to the module over the CAN bus.
+void EposMotor::WriteLoop()
+{
+    std::cout << "Epos Write thread started." << std::endl;
+    while (m_bIsRunning)
+    {
+        std::chrono::high_resolution_clock::time_point last=std::chrono::high_resolution_clock::now();
+        if (_target_pos != m_position && std::abs( _target_pos - m_position) > 4)  // 4 is error tolerance in ticks
+        {
+            double second = 0.001 * _update_interval;
+            int max_increment = (int)(second * _position_mode_velocity);
+            int increment = max_increment;
+            if (_target_pos < m_position)
+                increment = -increment;
+            if ( std::abs(_target_pos - m_position) < max_increment )
+                increment = _target_pos - m_position;
+            try {
+                int new_pos = m_position + increment, temp=0.0;
+                if (m_control_mode){
+                    m_control_mode->write(new_pos, temp, temp); // TODO now, only for position control
+                } else
+                    std::cout << "EposMotor's control mode is not available." << std::endl;
+            } catch (const EposException &e) {
+                int error = _target_pos - m_position;
+                std::cout << "Motor ticks: " << error << " [ticks]" << std::endl;
+                std::cout << e.what() << std::endl;
+            }
+        }
+        std::chrono::high_resolution_clock::time_point current=std::chrono::high_resolution_clock::now();
+        int64_t ms=(std::chrono::duration_cast<std::chrono::milliseconds>( current - last )).count();
+        if(ms < _update_interval)
+            std::this_thread::sleep_for(std::chrono::milliseconds( _update_interval - ms ));
+    }
+    std::cout << "EPOS Write thread terminating." << std::endl;
 }
 
 
@@ -98,9 +222,9 @@ void EposMotor::write(const double position, const double velocity, const double
 void EposMotor::initEposDeviceHandle()
 {
     const DeviceInfo device_info(_EposModel, _protocol_stack, _interface, _port);
-    const unsigned short node_id(0);
+    const unsigned short node_id(1);
 
-    // create epos handle
+    // // create epos handle
     m_epos_handle = HandleManager::CreateEposHandle(device_info, node_id);
 }
 
@@ -164,15 +288,16 @@ void EposMotor::initProtocolStackChanges()
  */
 void EposMotor::initControlMode(std::string control_mode)
 {
-    if (control_mode == "profile_position")
+    if (control_mode == "profile_position"){
         m_control_mode.reset(new EposProfilePositionMode());
-    else if (control_mode == "profile_velocity")
+    } else if (control_mode == "profile_velocity") {
         m_control_mode.reset(new EposProfileVelocityMode());
-    else if (control_mode == "current") 
+    } else if (control_mode == "current") {
         m_control_mode.reset(new EposCurrentMode());
-    else
-        throw EposException("Unsupported control mode (" + control_mode + ")");
-    m_control_mode->init();
+    } else {
+            throw EposException("Unsupported control mode (" + control_mode + ")");
+    }
+    m_control_mode->init(m_epos_handle);
 }
 
 /**
@@ -198,8 +323,9 @@ void EposMotor::initEncoderParams()
         }
         
         VCS_NODE_COMMAND(SetIncEncoderParameter, m_epos_handle, resolution, inverted_polarity);
+        VCS_NODE_COMMAND(SetVelocityUnits, m_epos_handle, 0xA4, -3); // 0 for STANDARD; -1 VN_DECI; -2 VN_CENTI; -3 VN_MILLI
 
-        m_max_qc = 4 * resolution * gear_ratio;
+        // m_max_qc = 4 * gear_ratio * resolution
 
     // } else if (type == 4 || type == 5) {
     //     // SSI Abs Encoder

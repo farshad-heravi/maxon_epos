@@ -16,16 +16,16 @@ class ControlModeBase {
 public:
     virtual ~ControlModeBase();
 
-    virtual void init();
+    virtual void init(NodeHandle &node_handle);
 
     // activate operation mode
     virtual void activate() = 0;
 
     // read something required for operation mode
-    virtual void read() = 0;
+    std::vector<int>  read();   // returns {pos, vel, current}
 
     // write commands of operation mode
-    virtual void write(const double position, const double velocity, const double current) = 0;
+    virtual void write(const int position, const int velocity, const int current) = 0;
 
 protected:
     NodeHandle m_epos_handle;

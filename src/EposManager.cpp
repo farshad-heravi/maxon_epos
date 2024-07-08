@@ -9,6 +9,8 @@
  */
 
 #include "EposManager.hpp"
+#include <iostream>
+#include <unistd.h>
 
 /**
  * @brief Constructor
@@ -27,16 +29,26 @@ EposManager::~EposManager() = default;
 
 bool EposManager::init()
 {
-    std::shared_ptr<EposMotor> _motor(
+    _motor = std::shared_ptr<EposMotor>(
         new EposMotor( _motor_name, _EposModel, _protocol_stack, _interface, _port, _baudrate, _timeout, _encoder_type, _encoder_resolution, _gear_ratio, _encoder_inverted_polarity, _control_mode)
     );
     _motor->init();
     return true;
 }
 
-std::vector<double> EposManager::read()
+void EposManager::start()
 {
-    std::vector<double> output = _motor->read();
+    _motor->Start();
+}
+
+void EposManager::stop()
+{
+    _motor->Stop();
+}
+
+std::vector<int> EposManager::read()
+{
+    std::vector<int> output =_motor->read();
     return output;
 }
 
@@ -44,7 +56,7 @@ std::vector<double> EposManager::read()
 * @param command get a three-element vector as [posistion, velocity, current]
 * gets the value corresponds to the active controller and ignores the other ones
 */
-void EposManager::write(const std::vector<double> command)
+void EposManager::write(const std::vector<int> command)
 {
     _motor->write(command[0], command[1], command[2]);
 }
